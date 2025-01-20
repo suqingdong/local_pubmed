@@ -1,0 +1,13 @@
+.vscode
+.venv
+
+__pycache__
+
+tests
+
+.env*
+
+*.log
+
+*.sqlite3
+

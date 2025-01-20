@@ -1,0 +1,9 @@
+django
+djangorestframework
+redis
+celery
+python-dotenv
+psycopg2-binary
+django-celery-beat
+python-dateutil
+pubmed_xml
