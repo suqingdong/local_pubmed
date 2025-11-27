@@ -207,3 +207,5 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab('*/20'),
     }
 }
+
+PUBMED_API_KEY = os.environ.get('PUBMED_API_KEY')

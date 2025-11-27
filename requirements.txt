@@ -2,6 +2,7 @@ django
 djangorestframework
 redis
 celery
+loguru
 python-dotenv
 psycopg2-binary
 django-celery-beat
