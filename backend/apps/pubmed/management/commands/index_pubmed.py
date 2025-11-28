@@ -8,14 +8,14 @@ from pubmed.models import PubmedArticle
 
 
 all_index_fields = [
-    'title',
-    'abstract',
+    # 'title',
+    # 'abstract',
     'year',
-    'pubmed_pubdate',
-    'authors',
-    'affiliations',
-    'impact_factor',
-    'pub_types',
+    # 'pubmed_pubdate',
+    # 'authors',
+    # 'affiliations',
+    'factor',
+    # 'pub_types',
 ]
 
 
@@ -60,7 +60,7 @@ class Command(BaseCommand):
                     sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({field})'
                 elif operation == 'remove':
                     sql = f'DROP INDEX IF EXISTS {index_name}'
+                loguru.logger.info(f'{operation} index `{index_name}` on `{table}.{field}`')
                 cursor.execute(sql)
 
-                loguru.logger.info(f'{operation} index `{index_name}` on `{table}.{field}`')
         loguru.logger.info('Done')
