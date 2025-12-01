@@ -15,5 +15,9 @@ class PubmedArticleSerializer(serializers.ModelSerializer):
             'factor',
             'jcr',
             'journal',
+            'pagination',
+            'volume',
             'authors',
+            'doi',
+            'pmc',
         ]
