@@ -208,4 +208,18 @@ CELERY_BEAT_SCHEDULE = {
     }
 }
 
+# PUBMED API KEY配置
 PUBMED_API_KEY = os.environ.get('PUBMED_API_KEY')
+
+# 缓存配置
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/2',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+

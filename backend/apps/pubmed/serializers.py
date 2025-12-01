@@ -14,4 +14,6 @@ class PubmedArticleSerializer(serializers.ModelSerializer):
             'pubmed_pubdate',
             'factor',
             'jcr',
+            'journal',
+            'authors',
         ]

@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.postgres.search import SearchVectorField
 from pgvector.django import VectorField
 
 
@@ -31,8 +32,11 @@ class PubmedArticle(models.Model):
 
     abstract_cn = models.TextField(verbose_name='Abstract CN', null=True, blank=True)
 
+    ts_en = SearchVectorField(editable=False, null=True, blank=True)  # 对应 GENERATED ALWAYS 列
+
     factor = models.FloatField(verbose_name='Factor', null=True, blank=True)
     jcr = models.CharField(max_length=10, verbose_name='JCR', null=True, blank=True)
+    zky = models.CharField(max_length=10, verbose_name='ZKY', null=True, blank=True)
 
     title_abstract_vector = VectorField(dimensions=3072, verbose_name='Title Abstract Vector', null=True, blank=True)
 

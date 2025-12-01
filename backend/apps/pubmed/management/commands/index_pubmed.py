@@ -47,20 +47,30 @@ class Command(BaseCommand):
         if fields == ['all'] or not fields:
             fields = all_index_fields
 
-        available_fields = [f.name for f in PubmedArticle._meta.fields]
+        available_fields = [f.name for f in PubmedArticle._meta.fields] + ['title_abstract']
         
         with connection.cursor() as cursor:
             for field in fields:
+                index_name = f'{table}_{field}_idx'
                 if field not in available_fields:
                     loguru.logger.warning(f'Field {field} not available')
                     continue
-
-                index_name = f'{table}_{field}_idx'
                 if operation == 'add':
-                    sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({field})'
+                    if field == 'title_abstract':
+                        sql = f'''
+                            ALTER TABLE {table}
+                            ADD COLUMN ts_en tsvector GENERATED ALWAYS AS (
+                                setweight(to_tsvector('english', coalesce(title,'')), 'A')
+                                ||
+                                setweight(to_tsvector('english', coalesce(abstract,'')), 'B')
+                            ) STORED;
+                            CREATE INDEX {table}_ts_en_idx ON {table} USING GIN (ts_en);
+                        '''
+                    else:
+                        sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({field})'
                 elif operation == 'remove':
                     sql = f'DROP INDEX IF EXISTS {index_name}'
-                loguru.logger.info(f'{operation} index `{index_name}` on `{table}.{field}`')
+                loguru.logger.info(f'{operation} index `{index_name}` on `{table}.{field}`:\n{sql}')
                 cursor.execute(sql)
 
         loguru.logger.info('Done')
