@@ -39,6 +39,7 @@ class PubmedArticle(models.Model):
     zky = models.CharField(max_length=10, verbose_name='ZKY', null=True, blank=True)
 
     title_abstract_vector = VectorField(dimensions=3072, verbose_name='Title Abstract Vector', null=True, blank=True)
+    title_abstract_vec = VectorField(dimensions=1536, verbose_name='Title Abstract Vec', null=True, blank=True)
 
     class Meta:
         verbose_name = 'Pubmed Article'

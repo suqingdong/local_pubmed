@@ -1,6 +1,7 @@
 from itertools import chain
 
 import numpy as np
+from django.db import transaction, connection
 from django.db.models import F
 from django.core.cache import cache
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank

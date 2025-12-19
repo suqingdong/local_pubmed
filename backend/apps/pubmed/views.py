@@ -1,6 +1,8 @@
+import time
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db import transaction, connection
 
 from pgvector.django import CosineDistance, L2Distance
 
@@ -8,7 +10,8 @@ from utils.llm import get_embeddings
 from pubmed.models import PubmedArticle
 from pubmed.serializers import PubmedArticleSerializer
 from pubmed.permissions import APIKeyPermission
-from pubmed.utils.hybrid_search import hybrid_search
+# from pubmed.utils.hybrid_search import hybrid_search
+from pubmed.utils.search import hybrid_search
 
 
 def vector_search(queryset, vector, top_k=10, threshold=None, start=0):
@@ -78,6 +81,7 @@ class PubmedHybridSearchView(APIView):
             - top_k: 返回结果数量
             - start: 起始位置
         """
+        start_time = time.time()
 
         query = payload.get('q', '')
         pmid_str = payload.get('id', '')
@@ -88,6 +92,8 @@ class PubmedHybridSearchView(APIView):
         top_k = int(payload.get('top_k', 10))
         start = int(payload.get('start', 0))
 
+        ef_search = 100
+
         # top_k限制在100以内
         if top_k > 100:
             top_k = 100
@@ -95,22 +101,27 @@ class PubmedHybridSearchView(APIView):
         if not query.strip() and not pmid_str.strip():
             return Response({'success': False, 'message': 'q or id is required!'})
         
-        base_qs = PubmedArticle.objects.all()
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute('SET LOCAL hnsw.ef_search=%s;', [ef_search])
+                cursor.execute('SET LOCAL work_mem = "256MB" ')
 
-        if pmid_str:
-            pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid).strip().isdigit()]
-            base_qs = base_qs.filter(pmid__in=pmid_list)
-            results = base_qs.all()
-        else:
-            if year_start:
-                base_qs = base_qs.filter(year__gte=int(year_start))
-            if year_end:
-                base_qs = base_qs.filter(year__lte=int(year_end))
-            if factor_min:
-                base_qs = base_qs.filter(factor__gte=float(factor_min))
-            if factor_max:
-                base_qs = base_qs.filter(factor__lte=float(factor_max))
-            results = hybrid_search(query, base_qs, top_k=top_k, start=start)
+                base_qs = PubmedArticle.objects.all()
+
+                if pmid_str:
+                    pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid).strip().isdigit()]
+                    base_qs = base_qs.filter(pmid__in=pmid_list)
+                    results = base_qs.all()
+                else:
+                    if year_start:
+                        base_qs = base_qs.filter(year__gte=int(year_start))
+                    if year_end:
+                        base_qs = base_qs.filter(year__lte=int(year_end))
+                    if factor_min:
+                        base_qs = base_qs.filter(factor__gte=float(factor_min))
+                    if factor_max:
+                        base_qs = base_qs.filter(factor__lte=float(factor_max))
+                    results = hybrid_search(query, base_qs, top_k=top_k, start=start)
 
         data = PubmedArticleSerializer(results, many=True).data
 
@@ -124,8 +135,15 @@ class PubmedHybridSearchView(APIView):
             'top_k': top_k,
             'start': start,
         }
+
+        elapsed_time = time.time() - start_time
         
-        return Response({'success': True, 'query': query_dict, 'data': data})
+        return Response({
+            'success': True,
+            'query': query_dict,
+            'data': data,
+            'elapsed_time': f'{elapsed_time:.2f}s',
+        })
 
     def get(self, request, *args, **kwargs):
         return self.search(request.query_params)

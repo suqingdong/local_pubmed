@@ -6,6 +6,7 @@ services:
     volumes:
       - ../db/postgresql:/var/lib/postgresql/data
       - ./config/pgvector_extension.sql:/docker-entrypoint-initdb.d/init-vector_extension.sql
+      - ./config/postgresql.conf:/var/lib/postgresql/data/postgresql.conf
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}

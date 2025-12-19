@@ -12,7 +12,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('-o', '--option', help='analyze or index', default='analyze', choices=['analyze', 'index'])
-        parser.add_argument('--field', help='field name', default='title_abstract_vector')
+        parser.add_argument('--field', help='field name', default='title_abstract_vec')
         parser.add_argument('--lists', help='lists', default=200, type=int)
 
 
@@ -24,12 +24,13 @@ class Command(BaseCommand):
 
         table = PubmedArticle._meta.db_table
 
-        analyze_sql = f'ANALYZE {table} ({field})'
+        analyze_sql = f'ANALYZE {table}'
 
         index_sql = f'''
-            CREATE INDEX {field}_hnsw_idx
+            CREATE INDEX CONCURRENTLY {field}_hnsw_idx
             ON {table}
-            USING hnsw ({field} vector_cosine_ops);
+            USING hnsw ({field} vector_cosine_ops)
+            WITH (m = 16, ef_construction = 200);
         '''
         
         with connection.cursor() as cursor:
