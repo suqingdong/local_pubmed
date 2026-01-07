@@ -48,6 +48,7 @@ def hybrid_search(query,
         base_qs.annotate(
             distance=CosineDistance('title_abstract_vec', vector_array)
         )
+        .filter(distance__lt=0.6)
         .order_by('distance')
         .only('pmid')[:vector_topn]
     )
@@ -62,13 +63,16 @@ def hybrid_search(query,
     # rrf_score = sum( 1 / (rank + K) )
     rrf_scores = {}
 
+    weight_bm25 = 1.0
+    weight_vector = 0.7  # 降低向量检索的权重
+
     # 处理 BM25 排名
     for rank, obj in enumerate(bm25_list, start=1):
-        rrf_scores[obj.pmid] = rrf_scores.get(obj.pmid, 0) + 1.0 / (K + rank)
+        rrf_scores[obj.pmid] = rrf_scores.get(obj.pmid, 0) + weight_bm25 / (K + rank)
 
     # 处理向量排名
     for rank, obj in enumerate(vector_list, start=1):
-        rrf_scores[obj.pmid] = rrf_scores.get(obj.pmid, 0) + 1.0 / (K + rank)
+        rrf_scores[obj.pmid] = rrf_scores.get(obj.pmid, 0) + weight_vector / (K + rank)
 
     # 按 RRF 分数从高到低排序，取最终 top_k 个 PMID
     final_pmids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[start:start+top_k]
