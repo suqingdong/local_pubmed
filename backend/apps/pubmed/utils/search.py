@@ -1,3 +1,4 @@
+import time
 from itertools import chain
 
 import numpy as np
@@ -36,7 +37,8 @@ def hybrid_search(query,
     vector_array = np.array(vector)
 
     # --- 1：BM25 召回 (仅取 ID 和 排名) ---
-    rank=SearchRank(F('ts_en'), SearchQuery(query, config='english'))
+    weights = [0.1, 0.2, 0.4, 1.0]
+    rank=SearchRank(F('ts_en'), SearchQuery(query, config='english'), weights=weights)
     bm25_qs = base_qs.annotate(rank=rank).extra(
         where=["ts_en @@ plainto_tsquery('english', %s)"],
         params=[query]
@@ -48,7 +50,7 @@ def hybrid_search(query,
         base_qs.annotate(
             distance=CosineDistance('title_abstract_vec', vector_array)
         )
-        .filter(distance__lt=0.6)
+        # .filter(distance__lt=0.6)
         .order_by('distance')
         .only('pmid')[:vector_topn]
     )

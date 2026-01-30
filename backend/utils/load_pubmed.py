@@ -63,6 +63,7 @@ def main(input_xmls, min_factor, n_years, logfile):
     loguru.logger.info(f'>>> min_factor: {min_factor}, n_years: {n_years}')
 
     for xml in input_xmls:
+        loguru.logger.info(f'>>> processing file: {xml}')
         out_jl = xml + '.jl'
         with open(out_jl, 'w') as out:
             for data in load_pubmed_xml(xml, min_factor=min_factor, n_years=n_years):

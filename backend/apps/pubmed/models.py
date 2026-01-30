@@ -38,7 +38,6 @@ class PubmedArticle(models.Model):
     jcr = models.CharField(max_length=10, verbose_name='JCR', null=True, blank=True)
     zky = models.CharField(max_length=10, verbose_name='ZKY', null=True, blank=True)
 
-    title_abstract_vector = VectorField(dimensions=3072, verbose_name='Title Abstract Vector', null=True, blank=True)
     title_abstract_vec = VectorField(dimensions=1536, verbose_name='Title Abstract Vec', null=True, blank=True)
 
     class Meta:
@@ -46,6 +45,8 @@ class PubmedArticle(models.Model):
         verbose_name_plural = 'Pubmed Articles'
         ordering = ['-pubmed_pubdate']
         db_table = 'pubmed_articles'
+
+        managed = False
 
     def __str__(self):
         return f'{self.pmid} - {self.title}'

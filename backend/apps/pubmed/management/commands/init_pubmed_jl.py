@@ -2,6 +2,7 @@ import re
 import sys
 import json
 import time
+import datetime as dt
 from pathlib import Path
 
 import loguru
@@ -10,7 +11,19 @@ from django.core.management.base import BaseCommand
 from django.db import transaction, connection
 
 from pubmed.models import PubmedArticle
-import utils
+
+
+
+def _parse_date(v):
+    """把 'YYYY-MM-DD' / date / None 转成 date"""
+    if v is None or v == "":
+        return None
+    if isinstance(v, dt.date):
+        return v
+    if isinstance(v, str):
+        # 只处理你示例这种最常见格式；需要更复杂格式再扩展
+        return dt.date.fromisoformat(v)
+    return v
 
 
 def load_json_data(json_file):
@@ -26,6 +39,9 @@ def get_bulk_articles(json_file, batch_size):
     bulk_articles = []
     for data in load_json_data(json_file):
         article = PubmedArticle(**data)
+        if hasattr(article, 'ts_en'):
+            del article.ts_en
+
         bulk_articles.append(article)
         if len(bulk_articles) == batch_size:
             yield bulk_articles
@@ -34,21 +50,87 @@ def get_bulk_articles(json_file, batch_size):
         yield bulk_articles
 
 
+
+def _raw_insert_pubmed_articles(objs, ignore_conflicts=True, page_size=2000):
+    if not objs:
+        return 0
+
+    model = objs[0].__class__
+    table = model._meta.db_table
+    qn = connection.ops.quote_name
+
+    # 排除 generated column
+    fields = [
+        f for f in model._meta.concrete_fields
+        if f.column is not None and f.name != "ts_en"
+    ]
+
+    cols_sql = ", ".join(qn(f.column) for f in fields)
+    pk_col = qn(model._meta.pk.column)
+
+    try:
+        from psycopg2.extras import execute_values, Json
+    except Exception as e:
+        raise RuntimeError("需要 psycopg2/psycopg2-binary 才能运行该 raw insert。") from e
+
+    def adapt_value(field, value):
+        if value is None:
+            return None
+
+        # 更稳：用内部类型判断 JSONField（兼容不同 JSONField 实现）
+        internal = getattr(field, "get_internal_type", lambda: "")()
+        if internal == "JSONField":
+            return Json(value)
+
+        # 或者按 db_type 判断（jsonb / json）
+        dbt = (field.db_type(connection) or "").lower()
+        if "jsonb" in dbt or dbt == "json":
+            return Json(value)
+
+        # 日期字段：把字符串转 date，更稳
+        if internal == "DateField":
+            return _parse_date(value)
+
+        return value
+
+    rows = []
+    for obj in objs:
+        row = []
+        for f in fields:
+            v = getattr(obj, f.attname)
+            row.append(adapt_value(f, v))
+        rows.append(row)
+
+    sql = f"INSERT INTO {qn(table)} ({cols_sql}) VALUES %s"
+    if ignore_conflicts:
+        sql += f" ON CONFLICT ({pk_col}) DO NOTHING"
+
+    with connection.cursor() as cursor:
+        execute_values(cursor, sql, rows, page_size=2000)
+
+    return len(objs)
+
+
 # 批量导入数据
-def bulk_create_articles(data_path, batch_size):
+def bulk_create_articles(data_path, batch_size, ignore_conflicts=True):
     """批量插入数据，速度快，但内存占用大
     """
+    count = 0
     for json_file in data_path:
-        with transaction.atomic():
-            count = 0
-            for bulk_articles in get_bulk_articles(json_file, batch_size):
-                PubmedArticle.objects.bulk_create(bulk_articles)
+        for bulk_articles in get_bulk_articles(json_file, batch_size):
+            with transaction.atomic():
+                # PubmedArticle.objects.bulk_create(
+                #     bulk_articles,
+                #     ignore_conflicts=ignore_conflicts,
+                # )
+                # ✅ 用 raw insert 替代 bulk_create
+                _raw_insert_pubmed_articles(
+                    bulk_articles,
+                    ignore_conflicts=ignore_conflicts,
+                    page_size=batch_size,   # 你也可以固定成 2000/5000
+                )
                 count += len(bulk_articles)
-                sys.stderr.write(f'\r>>> {count} articles loaded')
-                sys.stderr.flush()
-            sys.stderr.write('\n')
-
-
+                loguru.logger.debug(f'inserted {count} articles')
 
 
 def create_article(data_path, mode):

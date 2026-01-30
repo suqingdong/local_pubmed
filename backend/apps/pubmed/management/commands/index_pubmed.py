@@ -31,7 +31,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('fields', type=str, help='Fields to index', nargs='*')
-        parser.add_argument('-o', '--operation', type=str, help='Operation to perform', default='add', choices=['add', 'remove', 'list'])
+        parser.add_argument('-o', '--operation', type=str, help='Operation to perform', default='list', choices=['add', 'remove', 'list'])
 
 
     def handle(self, *args, **kwargs):
@@ -47,7 +47,7 @@ class Command(BaseCommand):
         if fields == ['all'] or not fields:
             fields = all_index_fields
 
-        available_fields = [f.name for f in PubmedArticle._meta.fields] + ['title_abstract']
+        available_fields = [f.name for f in PubmedArticle._meta.fields] + ['title_abstract'] + ['title_abstract_vec_hnsw_idx']
         
         with connection.cursor() as cursor:
             for field in fields:
@@ -69,6 +69,8 @@ class Command(BaseCommand):
                     else:
                         sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({field})'
                 elif operation == 'remove':
+                    if field == 'title_abstract_vec_hnsw_idx':
+                        index_name = 'title_abstract_vec_hnsw_idx'
                     sql = f'DROP INDEX IF EXISTS {index_name}'
                 loguru.logger.info(f'{operation} index `{index_name}` on `{table}.{field}`:\n{sql}')
                 cursor.execute(sql)

@@ -10,56 +10,16 @@ from utils.llm import get_embeddings
 from pubmed.models import PubmedArticle
 from pubmed.serializers import PubmedArticleSerializer
 from pubmed.permissions import APIKeyPermission
-# from pubmed.utils.hybrid_search import hybrid_search
 from pubmed.utils.search import hybrid_search
 
 
-def vector_search(queryset, vector, top_k=10, threshold=None, start=0):
-    qs = queryset.annotate(distance=CosineDistance('title_abstract_vector', vector))
-    if threshold is not None:
-        qs = qs.filter(distance__lte=threshold)
-    qs = qs.order_by('distance')[start:start+top_k]
-    # print(qs.query)
-    return qs
 
-
-class PubmedSearchView(APIView):
-
-    __route__ = 'search'
-    embeddings = get_embeddings()
-
-    permission_classes = [APIKeyPermission]
-
-    def search(self, payload):
-
-        query = payload.get('q', '')
-        year = payload.get('year', None)
-        factor = payload.get('factor', None)
-        top_k = int(payload.get('top_k', 10))
-        start = int(payload.get('start', 0))
-
-        if not query.strip():
-            return Response({'success': False, 'message': 'q is required!'})
-
-        vector = self.embeddings.embed_query(query)
-
-        queryset = PubmedArticle.objects.all()
-        if year is not None:
-            queryset = queryset.filter(year__gte=int(year))
-        if factor is not None:
-            queryset = queryset.filter(factor__gte=float(factor))
-
-        results = vector_search(queryset, vector, top_k=top_k, start=start)
-        data = PubmedArticleSerializer(results, many=True).data
-
-        return Response({'success': True, 'query': query, 'data': data})
-
-    def get(self, request, *args, **kwargs):
-        return self.search(request.query_params)
-
-    def post(self, request, *args, **kwargs):
-        return self.search(request.data)
-
+# 接口维护中响应
+def maintenance_response():
+    return Response({
+        'success': False,
+        'message': 'This API is under maintenance. Please try again later.',
+    })
 
 
 class PubmedHybridSearchView(APIView):
@@ -81,10 +41,16 @@ class PubmedHybridSearchView(APIView):
             - top_k: 返回结果数量
             - start: 起始位置
         """
+
+        return Response({
+            'success': False,
+            'message': 'This API is under maintenance. Please try again later.',
+        })
+
         start_time = time.time()
 
-        query = payload.get('q', '')
-        pmid_str = payload.get('id', '')
+        query = payload.get('q', '').strip()
+        pmid_str = payload.get('id', '').strip()
         year_start = payload.get('year_start', None)
         year_end = payload.get('year_end', None)
         factor_min = payload.get('factor_min', None)
@@ -92,36 +58,58 @@ class PubmedHybridSearchView(APIView):
         top_k = int(payload.get('top_k', 10))
         start = int(payload.get('start', 0))
 
-        ef_search = 100
+        ef_search = 40
 
         # top_k限制在100以内
         if top_k > 100:
             top_k = 100
 
-        if not query.strip() and not pmid_str.strip():
+        if not query and not pmid_str:
             return Response({'success': False, 'message': 'q or id is required!'})
         
-        with transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute('SET LOCAL hnsw.ef_search=%s;', [ef_search])
-                cursor.execute('SET LOCAL work_mem = "256MB" ')
+        base_qs = PubmedArticle.objects.all()
 
-                base_qs = PubmedArticle.objects.all()
+        if pmid_str:
+            pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid).strip().isdigit()]
+            base_qs = base_qs.filter(pmid__in=pmid_list)
+            results = base_qs.all()
 
-                if pmid_str:
-                    pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid).strip().isdigit()]
-                    base_qs = base_qs.filter(pmid__in=pmid_list)
-                    results = base_qs.all()
-                else:
-                    if year_start:
-                        base_qs = base_qs.filter(year__gte=int(year_start))
-                    if year_end:
-                        base_qs = base_qs.filter(year__lte=int(year_end))
-                    if factor_min:
-                        base_qs = base_qs.filter(factor__gte=float(factor_min))
-                    if factor_max:
-                        base_qs = base_qs.filter(factor__lte=float(factor_max))
-                    results = hybrid_search(query, base_qs, top_k=top_k, start=start)
+        else:
+            has_filter = False
+            if year_start:
+                base_qs = base_qs.filter(year__gte=int(year_start))
+                has_filter = True
+            if year_end:
+                base_qs = base_qs.filter(year__lte=int(year_end))
+                has_filter = True
+            if factor_min:
+                base_qs = base_qs.filter(factor__gte=float(factor_min))
+                has_filter = True
+            if factor_max:
+                base_qs = base_qs.filter(factor__lte=float(factor_max))
+                has_filter = True
+
+            with transaction.atomic():
+                with connection.cursor() as cursor:
+                    ef_search = 80 if has_filter else 40
+                    cursor.execute('SET LOCAL hnsw.ef_search=%s;', [ef_search])
+                    cursor.execute('SET LOCAL work_mem = "256MB" ')
+
+                    cursor.execute('SET LOCAL enable_indexscan = on;')
+
+                    # 强制开启并行
+                    cursor.execute('SET LOCAL max_parallel_workers_per_gather = 4;') 
+                    cursor.execute('SET LOCAL max_parallel_maintenance_workers = 4;')
+                    cursor.execute('SET LOCAL min_parallel_table_scan_size = 0;')
+                    cursor.execute('SET LOCAL parallel_setup_cost = 0;')
+
+                    results = hybrid_search(
+                        query,
+                        base_qs,
+                        top_k=top_k,
+                        start=start,
+                        vector_topn=200 if has_filter else 100,
+                    )
 
         data = PubmedArticleSerializer(results, many=True).data
 
