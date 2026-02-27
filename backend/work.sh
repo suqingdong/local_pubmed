@@ -68,3 +68,20 @@ python manage.py run_sql sql/reindex_part_0.sql
 python manage.py run_sql sql/reindex_part_1.sql
 python manage.py run_sql sql/reindex_part_2.sql
 python manage.py run_sql sql/reindex_part_3.sql
+
+
+# ===============
+# 重新按年份分区
+python manage.py run_sql sql/repartition.sql
+
+# 分批导入
+nohup python manage.py run_sql sql/insert_1.sql &> insert_1.log &
+nohup python manage.py run_sql sql/insert_2.sql &> insert_2.log &
+nohup python manage.py run_sql sql/insert_3.sql &> insert_3.log &
+nohup python manage.py run_sql sql/insert_4.sql &> insert_4.log &
+nohup python manage.py run_sql sql/insert_5.sql &> insert_5.log &
+
+# 建立新分区索引
+ls sql/index_{1..5}.sql | xargs -i echo "python manage.py run_sql {}" > create_new_partition_index_commands.sh
+nohup sh create_new_partition_index_commands.sh &> create_new_partition_index.log &
+

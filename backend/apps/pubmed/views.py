@@ -42,16 +42,16 @@ class PubmedHybridSearchView(APIView):
             - start: 起始位置
         """
 
-        return Response({
-            'success': False,
-            'message': 'This API is under maintenance. Please try again later.',
-        })
+        # return Response({
+        #     'success': False,
+        #     'message': 'This API is under maintenance. Please try again later.',
+        # })
 
         start_time = time.time()
 
         query = payload.get('q', '').strip()
         pmid_str = payload.get('id', '').strip()
-        year_start = payload.get('year_start', None)
+        year_start = payload.get('year_start', 2021)
         year_end = payload.get('year_end', None)
         factor_min = payload.get('factor_min', None)
         factor_max = payload.get('factor_max', None)
@@ -93,15 +93,6 @@ class PubmedHybridSearchView(APIView):
                 with connection.cursor() as cursor:
                     ef_search = 80 if has_filter else 40
                     cursor.execute('SET LOCAL hnsw.ef_search=%s;', [ef_search])
-                    cursor.execute('SET LOCAL work_mem = "256MB" ')
-
-                    cursor.execute('SET LOCAL enable_indexscan = on;')
-
-                    # 强制开启并行
-                    cursor.execute('SET LOCAL max_parallel_workers_per_gather = 4;') 
-                    cursor.execute('SET LOCAL max_parallel_maintenance_workers = 4;')
-                    cursor.execute('SET LOCAL min_parallel_table_scan_size = 0;')
-                    cursor.execute('SET LOCAL parallel_setup_cost = 0;')
 
                     results = hybrid_search(
                         query,

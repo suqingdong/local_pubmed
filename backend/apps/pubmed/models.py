@@ -43,8 +43,8 @@ class PubmedArticle(models.Model):
     class Meta:
         verbose_name = 'Pubmed Article'
         verbose_name_plural = 'Pubmed Articles'
-        ordering = ['-pubmed_pubdate']
-        db_table = 'pubmed_articles'
+        # ordering = ['-pubmed_pubdate']
+        db_table = 'pubmed_articles_2'
 
         managed = False
 
