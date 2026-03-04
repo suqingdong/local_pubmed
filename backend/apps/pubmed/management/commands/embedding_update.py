@@ -25,27 +25,28 @@ def read_jsonl_batches(input_files, batch_size):
 
 
 def copy_update_vectors(cursor, table, batch_data):
-    # 1. 创建内存中的文本流 (CSV 格式)
-    # 格式：pmid|vector_string
+    logger.debug(f"Copying and updating {len(batch_data)} vectors into {table}...")
+    # 1. 准备 CSV 数据，增加 year 字段
     f = io.StringIO()
     for row in batch_data:
-        # 将 [0.1, 0.2, ...] 转换为 '[0.1,0.2,...]'
         vec_str = '[' + ','.join(map(str, row['vec'])) + ']'
-        f.write(f"{row['pmid']}\t{vec_str}\n")
+        # 注意：你的 batch_data 里必须包含 year！
+        f.write(f"{row['pmid']}\t{row['year']}\t{vec_str}\n")
     f.seek(0)
 
-    # 2. 创建临时表 (不记日志，极快)
-    cursor.execute(f"CREATE TEMP TABLE tmp_vectors (pmid INT, vec vector) ON COMMIT DROP;")
+    # 2. 创建临时表（增加 year 以利用分区裁剪）
+    cursor.execute("CREATE TEMP TABLE tmp_vectors (pmid INT, year INT, vec vector) ON COMMIT DROP;")
 
-    # 3. 使用 COPY 快速导入临时表
-    cursor.copy_from(f, 'tmp_vectors', columns=('pmid', 'vec'))
+    # 3. COPY 导入
+    cursor.copy_from(f, 'tmp_vectors', columns=('pmid', 'year', 'vec'), sep='\t')
 
-    # 4. 利用数据库内部 Join 完成更新 (这步是毫秒级的)
+    # 4. 重点！利用 year 进行 Join 更新
+    # 这样 Postgres 只会去改 p_future 或 p_2021_2025 的特定子表
     cursor.execute(f"""
         UPDATE {table} AS t
         SET title_abstract_vec = v.vec
         FROM tmp_vectors v
-        WHERE t.pmid = v.pmid;
+        WHERE t.pmid = v.pmid AND t.year = v.year;
     """)
 
 
@@ -66,20 +67,27 @@ class Command(BaseCommand):
 
         complete_count = 0
         for batch_data in read_jsonl_batches(input_files, batch_size):
-            objs = [PubmedArticle(pmid=row['pmid'], title_abstract_vec=row['vec']) for row in batch_data]
+            # objs = [
+            #     PubmedArticle(
+            #         pmid=row['pmid'],
+            #         year=row['year'],
+            #         title_abstract_vec=row['vec'],
+            #     ) for row in batch_data
+            # ]
             with transaction.atomic():
 
                 # SET synchronous_commit = off; -- 牺牲一点安全性换取极速写入
                 with connection.cursor() as cursor:
-                    cursor.execute('SET synchronous_commit = off;')
+                    cursor.execute('SET LOCAL synchronous_commit = off;')
+                    cursor.execute("SET LOCAL maintenance_work_mem = '1GB';")
 
-                    # copy_update_vectors(cursor, table, batch_data)
+                    copy_update_vectors(cursor, table, batch_data)
 
-                    PubmedArticle.objects.bulk_update(
-                        objs,
-                        ['title_abstract_vec'],
-                        batch_size=2000,
-                    )
+                    # PubmedArticle.objects.bulk_update(
+                    #     objs,
+                    #     ['title_abstract_vec'],
+                    #     batch_size=2000,
+                    # )
 
             complete_count += len(batch_data)
             logger.debug(f'Processed {complete_count} articles')

@@ -51,7 +51,7 @@ def get_bulk_articles(json_file, batch_size):
 
 
 
-def _raw_insert_pubmed_articles(objs, ignore_conflicts=True, page_size=2000):
+def _raw_insert_pubmed_articles(objs, ignore_conflicts=False, page_size=2000):
     if not objs:
         return 0
 
@@ -106,13 +106,17 @@ def _raw_insert_pubmed_articles(objs, ignore_conflicts=True, page_size=2000):
         sql += f" ON CONFLICT ({pk_col}) DO NOTHING"
 
     with connection.cursor() as cursor:
-        execute_values(cursor, sql, rows, page_size=2000)
+        # 1. 临时关闭同步提交，追求极致导入速度
+        # LOCAL 表示只对当前这个数据库连接生效，执行完后会自动恢复
+        cursor.execute("SET LOCAL synchronous_commit = off;")
+        cursor.execute("SET LOCAL maintenance_work_mem = '1GB';")
+        execute_values(cursor, sql, rows, page_size=page_size)
 
     return len(objs)
 
 
 # 批量导入数据
-def bulk_create_articles(data_path, batch_size, ignore_conflicts=True):
+def bulk_create_articles(data_path, batch_size, ignore_conflicts=False):
     """批量插入数据，速度快，但内存占用大
     """
     count = 0
@@ -134,23 +138,51 @@ def bulk_create_articles(data_path, batch_size, ignore_conflicts=True):
 
 
 def create_article(data_path, mode):
-    """逐条插入数据，速度慢，适合追踪异常数据
-    """
+    """逐条插入数据，使用 Raw SQL 彻底绕过生成列报错"""
+    # 提前准备好字段名和占位符（排除 ts_en）
+    model = PubmedArticle
+    fields = [f for f in model._meta.concrete_fields if f.name != 'ts_en']
+    columns = [connection.ops.quote_name(f.column) for f in fields]
+    placeholders = ["%s"] * len(fields)
+    
+    # 构建基础插入语句
+    insert_sql = f"INSERT INTO {connection.ops.quote_name(model._meta.db_table)} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+    
+    # 如果需要更新模式，追加冲突处理
+    if mode == 'update':
+        # 假设你的冲突键是 pmid 和 year
+        update_cols = [f"{col} = EXCLUDED.{col}" for col in columns if col not in ['"pmid"', '"year"']]
+        insert_sql += f" ON CONFLICT (pmid, year) DO UPDATE SET {', '.join(update_cols)}"
+    else:
+        insert_sql += " ON CONFLICT (pmid, year) DO NOTHING"
+
     for json_file in data_path:
-        with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL maintenance_work_mem = '1GB';")
+            cursor.execute("SET LOCAL synchronous_commit = off;")
             for n, data in enumerate(load_json_data(json_file), 1):
-                pmid = data['pmid']
+                data.pop('ts_en', None)
+                
+                # 🔥 关键修正：手动处理 JSON 字段的适配
+                vals = []
+                for f in fields:
+                    val = data.get(f.attname)
+                    # 检查字段是否为 JSONField 或内容为 list/dict
+                    internal_type = f.get_internal_type()
+                    if (internal_type == "JSONField" or isinstance(val, (list, dict))) and val is not None:
+                        # 转换成 JSON 字符串，psycopg2 会自动处理 jsonb 适配
+                        from psycopg2.extras import Json
+                        vals.append(Json(val))
+                    else:
+                        vals.append(val)
+                
                 try:
-                    if mode == 'insert':
-                        PubmedArticle.objects.create(**data)
-                    elif mode == 'update':
-                        PubmedArticle.objects.update_or_create(pmid=pmid, defaults=data)
+                    cursor.execute(insert_sql, vals)
                     if n % 1000 == 0:
-                        sys.stderr.write(f'\r>>> {n} articles loaded')
+                        sys.stderr.write(f'\r>>> {n} articles processed')
                         sys.stderr.flush()
                 except Exception as e:
-                    loguru.logger.error(f'Error updating article {pmid}: {e}')
-                    print(data)
+                    loguru.logger.error(f"Error at PMID {data.get('pmid')}: {e}")
                     exit(1)
 
 
@@ -160,7 +192,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('data_path', type=str, help='Path to the PubMed data', nargs='*')
         parser.add_argument('-d', '--drop', action='store_true', help='Drop existing data before loading')
-        parser.add_argument('-b', '--batch-size', help='Batch size for bulk create', type=int, default=10000)
+        parser.add_argument('-b', '--batch-size', help='Batch size for bulk create', type=int, default=500)
         parser.add_argument('-m', '--mode', help='mode of create', choices=['insert', 'update'], default='insert')
 
     def handle(self, *args, **kwargs):

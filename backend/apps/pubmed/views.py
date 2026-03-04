@@ -64,6 +64,10 @@ class PubmedHybridSearchView(APIView):
         if top_k > 100:
             top_k = 100
 
+        # 限制2021年之后的文章
+        if int(year_start) < 2021:
+            year_start = 2021
+
         if not query and not pmid_str:
             return Response({'success': False, 'message': 'q or id is required!'})
         
