@@ -15,6 +15,7 @@ import datetime
 from pathlib import Path
 
 import dotenv
+import dj_database_url
 
 from celery.schedules import crontab
 
@@ -27,20 +28,7 @@ sys.path.insert(0, str(BASE_DIR / 'apps'))
 # 环境变量处理
 # =============
 dotenv.load_dotenv()
-dotenv.load_dotenv('../docker/.env')
 
-POSTGRES_DB = os.environ.get('POSTGRES_DB')
-POSTGRES_USER = os.environ.get('POSTGRES_USER')
-POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD')
-POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
-POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
-
-REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD')
-REDIS_PORT = os.environ.get('REDIS_PORT')
-
-CELERY_BROKER_URL = f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0'
-CELERY_RESULT_BACKEND = f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/1'
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -157,20 +145,18 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ****************************************************
 
+# ================
 # 数据库配置
-if POSTGRES_DB:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': POSTGRES_DB,
-            'USER': POSTGRES_USER,
-            'PASSWORD': POSTGRES_PASSWORD,
-            'HOST': POSTGRES_HOST,
-            'PORT': POSTGRES_PORT,
-            'CONN_MAX_AGE': 0,
-            'CONN_HEALTH_CHECKS': False,
-        }
-    }
+# ================
+POSTGRES_URI = os.environ.get('POSTGRES_URI')
+if POSTGRES_URI:
+    DATABASES.update({
+        'default': dj_database_url.parse(
+            POSTGRES_URI,
+            conn_max_age=60,
+            conn_health_checks=True,
+        ),
+    })
 
 # ================
 # 应用配置
@@ -183,14 +169,16 @@ INSTALLED_APPS += [
     'pubmed',
 ]
 
-# ================
-# Celery 配置
-# ================
+# =================================================================
+# CELERY配置
+# =================================================================
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND')
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 24 * 60 * 60
-CELERY_BROKER_URL = CELERY_BROKER_URL
-CELERY_RESULT_BACKEND = CELERY_RESULT_BACKEND
 CELERY_ACCEPT_CONTENT = ['application/json', 'pickle']
 CELERY_TASK_SERIALIZER = 'pickle'
 CELERY_RESULT_SERIALIZER = 'pickle'
@@ -215,7 +203,7 @@ PUBMED_API_KEY = os.environ.get('PUBMED_API_KEY')
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/2',
+        'LOCATION': os.environ.get('CACHE_REDIS_URL'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
