@@ -13,6 +13,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     networks:
       - local_pubmed_network
+    ports:
+      - ${POSTGRES_PORT}:5432
 
   pgbouncer:
     container_name: ${COMPOSE_PROJECT_NAME}-pgbouncer
@@ -36,6 +38,8 @@ services:
     depends_on:
       - postgresql_server
 
+    
+
   redis_server:
     container_name: ${COMPOSE_PROJECT_NAME}-redis_server
     image: redis:alpine
@@ -45,6 +49,8 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD} --dir /data
     networks:
       - local_pubmed_network
+    ports:
+      - ${REDIS_PORT}:6379
 
   django_backend:
     container_name: ${COMPOSE_PROJECT_NAME}-django_backend
