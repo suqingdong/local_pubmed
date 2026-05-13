@@ -52,10 +52,19 @@ class PubmedArticle(models.Model):
         return f'{self.pmid} - {self.title}'
 
 
-# class PMCArticle(models.Model):
-#     pmcid = models.CharField(max_length=255, primary_key=True, verbose_name='PMCID')
-#     body = models.JSONField(verbose_name='Body', null=True, blank=True)
-#     pubmed = models.OneToOneField(PubmedArticle, on_delete=models.SET_NULL, verbose_name='Pubmed', null=True, blank=True, related_name='pmc_article')
+class PMCArticle(models.Model):
+    pmcid = models.CharField(max_length=255, primary_key=True, verbose_name='PMCID')
+    body = models.JSONField(verbose_name='Body', null=True, blank=True)
+    pubmed = models.OneToOneField(
+        PubmedArticle,
+        on_delete=models.SET_NULL,
+        verbose_name='Pubmed',
+        null=True,
+        blank=True,
+        related_name='pmc_article',
+        db_column='pmid',
+        db_constraint=False,       # 关键：不创建数据库外键约束
+    )
 
-#     def __str__(self):
-#         return f'{self.pmcid} - {self.pubmed}'
+    def __str__(self):
+        return f'{self.pmcid} - {self.pubmed}'
