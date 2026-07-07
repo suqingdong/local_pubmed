@@ -32,14 +32,18 @@ class PubmedHybridSearchView(APIView):
         """混合搜索接口
         
         支持以下参数：
-            - q: 查询字符串
+            # 方式1：直接使用pmid查询
             - id: pmid字符串，用逗号分隔
+
+            # 方式2：混合检索+条件过滤
+            - q: 查询字符串
             - year_start: 开始年份
             - year_end: 结束年份
             - factor_min: 最小因子
             - factor_max: 最大因子
             - top_k: 返回结果数量
             - start: 起始位置
+            - pmid_list: PMID列表(pmid字符串，用逗号分隔)
         """
 
         # return Response({
@@ -57,6 +61,7 @@ class PubmedHybridSearchView(APIView):
         factor_max = payload.get('factor_max', None)
         top_k = int(payload.get('top_k', 10))
         start = int(payload.get('start', 0))
+        pmid_list = payload.get('pmid_list')
 
         ef_search = 40
 
@@ -92,6 +97,10 @@ class PubmedHybridSearchView(APIView):
             if factor_max:
                 base_qs = base_qs.filter(factor__lte=float(factor_max))
                 has_filter = True
+            if pmid_list:
+                pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid_list).strip().isdigit()]
+                base_qs = base_qs.filter(pmid__in=pmid_list)
+                has_filter = True
 
             with transaction.atomic():
                 with connection.cursor() as cursor:
@@ -117,6 +126,7 @@ class PubmedHybridSearchView(APIView):
             'factor_max': factor_max,
             'top_k': top_k,
             'start': start,
+            'pmid_list': pmid_list,
         }
 
         elapsed_time = time.time() - start_time
