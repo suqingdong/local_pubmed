@@ -61,7 +61,7 @@ class PubmedHybridSearchView(APIView):
         factor_max = payload.get('factor_max', None)
         top_k = int(payload.get('top_k', 10))
         start = int(payload.get('start', 0))
-        pmid_list = payload.get('pmid_list')
+        pmid_list_str = payload.get('pmid_list', '').strip()
 
         ef_search = 40
 
@@ -97,8 +97,8 @@ class PubmedHybridSearchView(APIView):
             if factor_max:
                 base_qs = base_qs.filter(factor__lte=float(factor_max))
                 has_filter = True
-            if pmid_list:
-                pmid_list = [int(pmid) for pmid in str(pmid_str).split(',') if str(pmid_list).strip().isdigit()]
+            if pmid_list_str:
+                pmid_list = [int(pmid) for pmid in str(pmid_list_str).split(',') if str(pmid).strip().isdigit()]
                 base_qs = base_qs.filter(pmid__in=pmid_list)
                 has_filter = True
 
@@ -126,7 +126,7 @@ class PubmedHybridSearchView(APIView):
             'factor_max': factor_max,
             'top_k': top_k,
             'start': start,
-            'pmid_list': pmid_list,
+            'pmid_list': pmid_list_str,
         }
 
         elapsed_time = time.time() - start_time
